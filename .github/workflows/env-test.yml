@@ -1,0 +1,28 @@
+name: env-test
+on:
+  push:
+    branches: [env-test]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set vars (same shape as _cve_fetch.yml, Sunday forced)
+      run: |
+        export LOST=1
+        DAY=7
+        if [[ "$DAY" == 7 ]]; then
+            echo "OVERWRITE_ALL_CVE_DATA=1" >> "$GITHUB_ENV"
+        fi
+    - name: Next step sees the variable
+      run: |
+        echo "LOST=${LOST:-<unset>}  OVERWRITE_ALL_CVE_DATA=${OVERWRITE_ALL_CVE_DATA:-<unset>}"
+    - name: cve_update.sh takes the full-refetch path
+      run: |
+        mkdir -p cve_data && touch cve_data/2025-01.json cve_data/2025-02.json
+        echo 2021 > start_year
+        echo "== with variable (expect no --skip):"
+        START_YEAR_PATH=start_year CVE_DATA_PATH=cve_data FETCHER=/bin/echo tools/dependency/cve_update.sh
+        echo "== without variable (expect --skip 2025-01,2025-02):"
+        unset OVERWRITE_ALL_CVE_DATA
+        START_YEAR_PATH=start_year CVE_DATA_PATH=cve_data FETCHER=/bin/echo tools/dependency/cve_update.sh
