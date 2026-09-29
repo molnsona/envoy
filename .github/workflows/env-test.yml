@@ -3,26 +3,34 @@ on:
   push:
     branches: [env-test]
 jobs:
-  t:
+  fetch:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [broken, fixed]
     steps:
     - uses: actions/checkout@v4
-    - name: Set vars (same shape as _cve_fetch.yml, Sunday forced)
+    - name: Set vars
       run: |
-        export LOST=1
-        DAY=7
-        if [[ "$DAY" == 7 ]]; then
+        if [[ "${{ matrix.variant }}" == "fixed" ]]; then
             echo "OVERWRITE_ALL_CVE_DATA=1" >> "$GITHUB_ENV"
+        else
+            export OVERWRITE_ALL_CVE_DATA=1
         fi
-    - name: Next step sees the variable
+    - name: Seed data dir (stands in for the GCS sync)
       run: |
-        echo "LOST=${LOST:-<unset>}  OVERWRITE_ALL_CVE_DATA=${OVERWRITE_ALL_CVE_DATA:-<unset>}"
-    - name: cve_update.sh takes the full-refetch path
+        mkdir -p cve_data
+        for m in 01 02 03 04 05 06 07 08; do : > "cve_data/2026-$m.json"; done
+        echo 2026 > start_year
+        ls -l cve_data
+    - name: Install fetcher deps
+      run: pip install aiohttp aio.run.runner
+    - name: Run CVE fetcher
       run: |
-        mkdir -p cve_data && touch cve_data/2025-01.json cve_data/2025-02.json
-        echo 2021 > start_year
-        echo "== with variable (expect no --skip):"
-        START_YEAR_PATH=start_year CVE_DATA_PATH=cve_data FETCHER=/bin/echo tools/dependency/cve_update.sh
-        echo "== without variable (expect --skip 2025-01,2025-02):"
-        unset OVERWRITE_ALL_CVE_DATA
-        START_YEAR_PATH=start_year CVE_DATA_PATH=cve_data FETCHER=/bin/echo tools/dependency/cve_update.sh
+        printf '#!/bin/bash\nexec python3 tools/dependency/cve_fetch.py "$@"\n' > fetcher.sh
+        chmod +x fetcher.sh
+        START_YEAR_PATH=start_year CVE_DATA_PATH=cve_data FETCHER=./fetcher.sh \
+          tools/dependency/cve_update.sh
+    - name: Result
+      run: ls -l cve_data
